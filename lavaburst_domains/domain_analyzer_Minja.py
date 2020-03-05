@@ -34,22 +34,22 @@ def statE1(domain,E1,f):
         return 0
     return f(e1["E1"].values)
 
-def getOverlapingDomainLength(e1,domains):
-    overlap = domains.loc[e1.chr].index.overlaps(e1.intervals)
-    domain = domains.loc[e1.chr][overlap]
-    if len(domain) == 0:
-        #print ("Warning, no domain found for e1 bin ",e1)
-        return -1
-    if len(domain) > 1:
-        print ("Warning, >1 domain found for e1 bin ",e1)
-        raise
-    l = domain.end.iloc[0] - domain.start.iloc[0]
-    if l > 400000:
-        return 400000 // 50000
-    else:
-        return l // 50000
-
 def plot_E1_from_domains_size_dependence():
+    def getOverlapingDomainLength(e1, domains):
+        overlap = domains.loc[e1.chr].index.overlaps(e1.intervals)
+        domain = domains.loc[e1.chr][overlap]
+        if len(domain) == 0:
+            # print ("Warning, no domain found for e1 bin ",e1)
+            return -1
+        if len(domain) > 1:
+            print("Warning, >1 domain found for e1 bin ", e1)
+            raise
+        l = domain.end.iloc[0] - domain.start.iloc[0]
+        if l > 400000:
+            return 400000 // 50000
+        else:
+            return l // 50000
+
     print("Getting domain length...")
     E1["domain_length"] = E1.apply(getOverlapingDomainLength, axis="columns", domains=domains)
 
@@ -60,8 +60,18 @@ def plot_E1_from_domains_size_dependence():
     plt.show()
 
 def compartments_switch_at_domains_boundaries():
+    def get_E1_near_boundaries(domain,E1,k):
+        #get interval +/-k beens near boundary
+        #get all e1 values vector
+        #contactenate vectors for both boundaries
+        #return
+        pass
+
+    domains["E1_boundary"] = domains.apply(get_E1_near_boundaries,axis="columns",
+                                           E1=E1,k=3)
 
 
+binsize = 25000
 domains_file = "Domains/AcolNg_4.35.ann"
 domains = read_domains(domains_file)
 print (domains.head())
