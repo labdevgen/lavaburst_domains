@@ -102,7 +102,7 @@ def get_insulation_of_domain_boundaries(domains, offset = 1, dist = 3):
            )
     #plt.show()
 
-    plt.savefig("results/"+os.path.basename(hic_file)+os.path.basename(domains_file)+".png")
+    #plt.savefig("results/"+os.path.basename(hic_file)+os.path.basename(domains_file)+".png")
     return domains
 
 def plot_E1_from_domains_size_dependence():
@@ -160,14 +160,14 @@ def compartments_switch_at_domains_boundaries(domains, E1, useHash = False):
         #contactenate vectors for both boundaries
         #return
 
-    k = 2 # how many bins near boundary to use
+    k = 3 # how many bins near boundary to use
     hashfile = os.path.join("hashedData",
                             md5((domains_file+compartments_file+str(k)).encode()).hexdigest() + \
                             "."+compartments_switch_at_domains_boundaries.__name__+".dump")
-    domains = get_insulation_of_domain_boundaries(domains,E1)
     if useHash and os.path.exists(hashfile):
         domains = pickle.load(open(hashfile,"rb"))
     else:
+        domains = get_insulation_of_domain_boundaries(domains)
         domains["E1_boundary"] = domains.apply(get_E1_near_boundaries,axis="columns",
                                            E1=E1,k=k,binsize=binsize)
         pickle.dump(domains,open(hashfile,"wb"))
@@ -191,27 +191,56 @@ def compartments_switch_at_domains_boundaries(domains, E1, useHash = False):
 
     # set colormaps
     domainlengths = (domains.end-domains.start).values.tolist()
-    norms = colors.BoundaryNorm(np.percentile(np.unique(domainlengths),
+    domain_insulations = np.hstack((domains.insulation_l.values,domains.insulation_r.values))
+
+    length_norms = colors.BoundaryNorm(np.percentile(np.unique(domainlengths),
                                               range(0,100,20)),
                                 ncolors=256)
-    mapper = cm.ScalarMappable(norms,cmap="Greys")
-    mapper.set_array(domainlengths)
-    lencolors = list(map(mapper.to_rgba,domainlengths))
+    insulation_norms = colors.BoundaryNorm(np.percentile(np.unique(domain_insulations),
+                                              range(0,100,10)),
+                                ncolors=256)
+
+    length2color_mapper = cm.ScalarMappable(length_norms,cmap="Greys")
+    length2color_mapper.set_array(domain_insulations)
+
+    insulation2color_mapper = cm.ScalarMappable(insulation_norms,cmap="RdBu")
+
+    inscolors_l = list(map(insulation2color_mapper.to_rgba,domains.insulation_l))
+    inscolors_r = list(map(insulation2color_mapper.to_rgba,domains.insulation_r))
+
+    lencolors = list(map(length2color_mapper.to_rgba,domainlengths))
+
     if separate_boundaries:
-        lencolors = lencolors*2
+        colors_list = [lencolors*2,inscolors_l+inscolors_r]
+    else:
+        colors_list = [lencolors,inscolors_l,inscolors_r]
 
     E1_values = boundaries.flatten()
     E1mapper = colors.TwoSlopeNorm(vcenter=0,
                          vmin=np.percentile(E1_values[E1_values<0],5),
                          vmax=np.percentile(E1_values[E1_values>0],95))
+
+    from scipy.spatial.distance import pdist
+    from scipy.cluster.hierarchy import linkage
+
+    boundary_index = boundaries.shape[1] // 2 + 1
+    averaged = np.vstack((np.average(boundaries[:,:boundary_index],axis=1),
+                          np.average(boundaries[:,boundary_index+1:],axis=1))).T
+    assert len(averaged)==len(boundaries)
+
+    distances = pdist(averaged, metric="correlation")
+    distances = np.nan_to_num(distances,nan=0)
+    link = linkage(distances,optimal_ordering=True)
+
     ax = sns.clustermap(boundaries,
                         row_cluster=True,
+                        row_linkage=link,
                         col_cluster=False,
-                        metric="seuclidean",
+                        #metric="seuclidean",
                         #figsize=(max(1,(k*2+1)*2//10),
                         #         max(20,len(boundaries)//100)),
                         yticklabels=False,
-                        row_colors=lencolors,
+                        row_colors=colors_list,
                         norm=E1mapper,
                         cmap="bwr"
                         )
@@ -220,7 +249,7 @@ def compartments_switch_at_domains_boundaries(domains, E1, useHash = False):
     if not separate_boundaries:
         ax.ax_heatmap.axvline(x=2*k+1+k+0.5)
         ax.ax_heatmap.axvline(x=2*k+1,ls="--")
-    c = plt.colorbar(mapper, ax=ax.ax_col_dendrogram,
+    c = plt.colorbar(length2color_mapper, ax=ax.ax_col_dendrogram,
                      orientation="horizontal",
                      fraction=0.5)
     c.set_label("Domain size")
@@ -258,6 +287,6 @@ print ("Starting analysis....")
 #    for dist in range(offset+1,7):
 #        print (offset,dist)
 #        get_insulation_of_domain_boundaries(domains, offset=offset, dist=dist)
-get_insulation_of_domain_boundaries(domains)
+# get_insulation_of_domain_boundaries(domains)
 
-# compartments_switch_at_domains_boundaries(domains, E1, useHash=True)
+compartments_switch_at_domains_boundaries(domains, E1, useHash=True)
