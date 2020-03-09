@@ -5,6 +5,7 @@ import matplotlib.pyplot as plt
 from matplotlib import colors, cm
 import os
 import pickle
+import math
 import numpy as np
 from scipy.stats import percentileofscore
 
@@ -42,6 +43,67 @@ def statE1(domain,E1,f):
         print ("Warning, no E1 found for domain",domain)
         return 0
     return f(e1["E1"].values)
+
+# for each domain boundaries compute insulatory score
+# insulatory score is simply an average obs/expected for rhombus with apex in domain boundary
+
+def get_insulation_of_domain_boundaries(domains, offset = 1, dist = 3):
+    def get_insulation(chr, position, binsize, hic_data):
+        if position - (dist+1)*binsize <= 0:
+            return np.nan
+        oes = []
+        for start in range(position - dist*binsize,
+                           position - offset*binsize,
+                           binsize):
+            for end in range(position + offset*binsize,
+                             position + dist*binsize,
+                             binsize):
+                oe = np.nan
+                try:
+                    oe = hic_data.loc[chr,start,end].oe
+                except KeyError:
+                    pass
+                oes.append(oe)
+        if sum(np.isnan(oes)) == len(oes):
+            return np.nan
+        return np.nanmean(oes)
+
+    assert dist > offset
+    hic_data = pd.read_csv(hic_file,sep="\t",header=None).rename(
+                                    columns={0:"chr",1:"start",2:"end",3:"oe"})
+    hic_data.oe = hic_data.oe.apply(math.log)
+    hic_data.index = pd.MultiIndex.from_frame(hic_data[["chr", "start","end"]])
+    #hic_data.drop(columns=["chr","start","end"],inplace=True)
+    hic_data.dropna(axis=0, inplace=True)
+
+    domains["insulation_l"] = domains.apply(lambda x: get_insulation(x.chr,x.start,
+                                                             binsize,hic_data),
+                                     axis="columns")
+    domains["insulation_r"] = domains.apply(lambda x: get_insulation(x.chr,x.end + 1,
+                                                             binsize,hic_data),
+                                            axis="columns")
+    domains.dropna(inplace=True)
+
+    sample = hic_data.query( "(end - start <= 2*@dist*@binsize) & " +
+                             "(end - start >= 2*@offset*@binsize)")
+    source = ["TAD left boundary"]*len(domains)+\
+             ["TAD right boundary"]*len(domains)+\
+             ["Genome average"]*len(sample)
+    insulation = np.hstack((domains["insulation_l"].values,
+                                 domains["insulation_r"].values,
+                                 sample.oe.values)).flatten()
+    plot_data = pd.DataFrame({"region":source, "log(obs/exp)":insulation})
+    ax = sns.boxplot(x="region", y="log(obs/exp)",data=plot_data)
+    ax.set(ylabel="log(obs/exp)")
+    plt.axhline(0)
+    print (np.median(domains["insulation_l"].values),
+                            np.median(sample.oe.values),
+           np.median(domains["insulation_l"].values) - np.median(sample.oe.values)
+           )
+    #plt.show()
+
+    plt.savefig("results/"+os.path.basename(hic_file)+os.path.basename(domains_file)+".png")
+    return domains
 
 def plot_E1_from_domains_size_dependence():
     def getOverlapingDomainLength(e1, domains):
@@ -102,6 +164,7 @@ def compartments_switch_at_domains_boundaries(domains, E1, useHash = False):
     hashfile = os.path.join("hashedData",
                             md5((domains_file+compartments_file+str(k)).encode()).hexdigest() + \
                             "."+compartments_switch_at_domains_boundaries.__name__+".dump")
+    domains = get_insulation_of_domain_boundaries(domains,E1)
     if useHash and os.path.exists(hashfile):
         domains = pickle.load(open(hashfile,"rb"))
     else:
@@ -119,18 +182,12 @@ def compartments_switch_at_domains_boundaries(domains, E1, useHash = False):
     boundaries = np.array(boundaries)
 
     separate_boundaries = True
+
     # concat two boundaries
     if separate_boundaries:
         b1 = boundaries[:,:k*2+1]
         b2 = np.fliplr(boundaries[:,k*2+1:])
-        print (boundaries)
-        print ("---------")
-        print (b1)
-        print("---------")
-        print (b2)
-        print("---------")
         boundaries = np.vstack((b1,b2))
-        print (boundaries)
 
     # set colormaps
     domainlengths = (domains.end-domains.start).values.tolist()
@@ -173,13 +230,15 @@ def compartments_switch_at_domains_boundaries(domains, E1, useHash = False):
 # sie of the Hi-C bin. Should be same for E1 and domains
 binsize = 25000
 
+hic_file = "hics/AcolNg_V3.hic.25000.oe.1000000.MB"
 domains_file = "Domains/AcolNg_4.35.ann"
+compartments_file = \
+    "http://genedev.bionet.nsc.ru/site/hic_out/Anopheles/eig/v3/AcolNg.v3.tpm.my.eig.bedGraph"
+
 domains = read_domains(domains_file)
 print (domains.head())
 assert (domains.start % binsize == 0).all()
 
-compartments_file = \
-    "http://genedev.bionet.nsc.ru/site/hic_out/Anopheles/eig/v3/AcolNg.v3.tpm.my.eig.bedGraph"
 E1 = read_compartments(compartments_file)
 print (E1.head())
 assert (E1.start % binsize == 0).all()
@@ -192,5 +251,13 @@ print ("Starting analysis....")
 
 # plot_E1_from_domains_size_dependence()
 
-# TODO: write a comment here
-compartments_switch_at_domains_boundaries(domains, E1, useHash=True)
+# This function will add insulation score for each genomic boundary
+# technically this will add insulation_r / l fields to domain dframe
+
+#for offset in [1,2]:
+#    for dist in range(offset+1,7):
+#        print (offset,dist)
+#        get_insulation_of_domain_boundaries(domains, offset=offset, dist=dist)
+get_insulation_of_domain_boundaries(domains)
+
+# compartments_switch_at_domains_boundaries(domains, E1, useHash=True)
