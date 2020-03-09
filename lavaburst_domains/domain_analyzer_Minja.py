@@ -181,6 +181,8 @@ def compartments_switch_at_domains_boundaries(domains, E1, useHash = False):
     boundaries = domains["E1_boundary"].dropna().values.tolist()
     boundaries = np.array(boundaries)
 
+    # whether to consider each boundary separately or draw whole domain
+    # some plots work only for separate_boundaries = True
     separate_boundaries = True
 
     # concat two boundaries
@@ -188,6 +190,10 @@ def compartments_switch_at_domains_boundaries(domains, E1, useHash = False):
         b1 = boundaries[:,:k*2+1]
         b2 = np.fliplr(boundaries[:,k*2+1:])
         boundaries = np.vstack((b1,b2))
+        boundary_index = boundaries.shape[1] // 2 + 1
+
+    ######################## dendrogramm #################
+    print("Drawing boundaries dendrogramm")
 
     # set colormaps
     domainlengths = (domains.end-domains.start).values.tolist()
@@ -223,14 +229,17 @@ def compartments_switch_at_domains_boundaries(domains, E1, useHash = False):
     from scipy.spatial.distance import pdist
     from scipy.cluster.hierarchy import linkage
 
-    boundary_index = boundaries.shape[1] // 2 + 1
-    averaged = np.vstack((np.average(boundaries[:,:boundary_index],axis=1),
-                          np.average(boundaries[:,boundary_index+1:],axis=1))).T
-    assert len(averaged)==len(boundaries)
 
-    distances = pdist(averaged, metric="correlation")
-    distances = np.nan_to_num(distances,nan=0)
-    link = linkage(distances,optimal_ordering=True)
+    if separate_boundaries:
+        averaged = np.vstack((np.average(boundaries[:,:boundary_index],axis=1),
+                              np.average(boundaries[:,boundary_index+1:],axis=1))).T
+        assert len(averaged)==len(boundaries)
+        """
+        distances = pdist(averaged, metric=lambda x,y: abs((x[0]-x[1])-(y[0]-y[1])))
+        # distances = np.nan_to_num(distances,nan=0)
+        link = linkage(distances, optimal_ordering=True)
+    else:
+        link = linkage(pdist(boundaries), optimal_ordering=True)
 
     ax = sns.clustermap(boundaries,
                         row_cluster=True,
@@ -244,7 +253,6 @@ def compartments_switch_at_domains_boundaries(domains, E1, useHash = False):
                         norm=E1mapper,
                         cmap="bwr"
                         )
-
     ax.ax_heatmap.axvline(x=k+0.5)
     if not separate_boundaries:
         ax.ax_heatmap.axvline(x=2*k+1+k+0.5)
@@ -255,6 +263,47 @@ def compartments_switch_at_domains_boundaries(domains, E1, useHash = False):
     c.set_label("Domain size")
 
     plt.show()
+    """
+
+    plt.clf()
+
+    # next plots are only for separate boundaries
+    if not separate_boundaries:
+        return
+
+    ################## scatter plot #####################
+    print("Drawing E1-diff vs insulation scatterplot")
+    # on X-axes E1 difference
+    # on Y-axes insulation score
+    sns.scatterplot(x=np.subtract(averaged[:,0],averaged[:,1]),
+                    y=domains.insulation_l.values.tolist()+domains.insulation_r.values.tolist()
+                )
+    #plt.show()
+
+    ################# examples of insulated domains w/o E1 change #############
+    abs_E1diff = np.abs(np.subtract(averaged[:,0],averaged[:,1]))
+    E1diff_threashold = np.percentile(abs_E1diff,25)
+    insulation_threashold = np.percentile(domains.insulation_l.values.tolist()+\
+                                      domains.insulation_r.values.tolist(),
+                                      25)
+    assert len(abs_E1diff) % 2==0
+    mask_l = (domains.insulation_l.values < insulation_threashold) & \
+         (abs_E1diff[:len(abs_E1diff)//2] < E1diff_threashold)
+    mask_r = (domains.insulation_r.values > insulation_threashold) & \
+             (abs_E1diff[len(abs_E1diff)//2:] < E1diff_threashold)
+
+    domain_colors = np.array(["255,255,255"]*len(domains))
+    domain_colors[mask_l] = "0,255,0" # Lime
+    domain_colors[mask_r] = "0,0,255" # Blue
+    domains["color"] = domain_colors
+
+    examples = domains[mask_l | mask_r]
+    def writeJuicerAnnotation(d,f):
+        f.write("\t".join(map(str,[d.chr,d.start,d.end,d.chr,d.start,d.end,d.color]))+"\n")
+    with open("results/"+os.path.basename(domains_file)+\
+                            "insulated.examples.ann","w") as fout:
+        examples.apply(writeJuicerAnnotation, axis="columns", f=fout)
+    fout.close()
 
 # sie of the Hi-C bin. Should be same for E1 and domains
 binsize = 25000
