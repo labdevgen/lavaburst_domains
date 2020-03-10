@@ -289,7 +289,7 @@ def compartments_switch_at_domains_boundaries(domains, E1, useHash = False):
     assert len(abs_E1diff) % 2==0
     mask_l = (domains.insulation_l.values < insulation_threashold) & \
          (abs_E1diff[:len(abs_E1diff)//2] < E1diff_threashold)
-    mask_r = (domains.insulation_r.values > insulation_threashold) & \
+    mask_r = (domains.insulation_r.values < insulation_threashold) & \
              (abs_E1diff[len(abs_E1diff)//2:] < E1diff_threashold)
 
     domain_colors = np.array(["255,255,255"]*len(domains))
@@ -299,12 +299,29 @@ def compartments_switch_at_domains_boundaries(domains, E1, useHash = False):
     domains["color"] = domain_colors
 
     examples = domains[mask_l | mask_r]
-    def writeJuicerAnnotation(d,f):
-        f.write("\t".join(map(str,[d.chr,d.start,d.end,d.chr,d.start,d.end,d.color]))+"\n")
-    with open("results/"+os.path.basename(domains_file)+\
-                            "insulated.examples.ann","w") as fout:
-        examples.apply(writeJuicerAnnotation, axis="columns", f=fout)
-    fout.close()
+    def writeJuicerAnnotation(d,f,color):
+        f.write("\t".join(map(str,[d.chr,d.start,d.end,d.chr,d.start,d.end,color]))+"\n")
+
+    basename ="results/"+os.path.basename(domains_file)
+    for mask, file, color in zip([np.logical_not(mask_l) & mask_r,
+                                  np.logical_not(mask_r) & mask_l,
+                                    (mask_l & mask_r)],
+                                ["r","l","b"],
+                                ["0,0,255","128,128,0","255,255,0"]):
+      with open(basename+"insulated.examples"+file+".ann","w") as fout:
+        domains.iloc[mask,:].apply(writeJuicerAnnotation, axis="columns", f=fout, color=color)
+
+    raise
+    pd.concat(
+        (pd.DataFrame([domains.chr,
+                      domains.start,
+                      domains.start+binsize,
+                      domains.insulation_l]).rename(columns={"insulation_l":"insulation"}),
+        pd.DataFrame([domains.chr,
+                      domains.end+1,
+                      domains.end+1+binsize,
+                      domains.insulation_r]).rename(columns={"insulation_r":"insulation"})
+         ), ignore_index=True).to_csv(basename+"ins.bedGraph",sep="\t",index=False)
 
 # sie of the Hi-C bin. Should be same for E1 and domains
 binsize = 25000
