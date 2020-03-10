@@ -293,8 +293,9 @@ def compartments_switch_at_domains_boundaries(domains, E1, useHash = False):
              (abs_E1diff[len(abs_E1diff)//2:] < E1diff_threashold)
 
     domain_colors = np.array(["255,255,255"]*len(domains))
-    domain_colors[mask_l] = "0,255,0" # Lime
+    domain_colors[mask_l] = "128,128,0" # Olive
     domain_colors[mask_r] = "0,0,255" # Blue
+    domain_colors[mask_r & mask_l] = "255,255,0" # Yellow
     domains["color"] = domain_colors
 
     examples = domains[mask_l | mask_r]
