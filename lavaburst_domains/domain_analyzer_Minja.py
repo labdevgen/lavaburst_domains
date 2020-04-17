@@ -7,6 +7,7 @@ import os
 import pickle
 import math
 import numpy as np
+import seaborn as sns
 from scipy.stats import percentileofscore
 
 # read domains from .ann file and store as pd dataframe
@@ -24,6 +25,8 @@ def read_domains(file):
     domains["intervals"] = pd.arrays.IntervalArray.from_arrays(
         domains.start,domains.end,closed="both")
     domains.index = pd.MultiIndex.from_frame(domains[["chr", "intervals"]])
+    domains["size"] = domains.end - domains.start
+    assert np.all((domains["size"] > 0).values)
     return domains
 
 # read compartments file as store as pd dataframe
@@ -44,9 +47,18 @@ def statE1(domain,E1,f):
         return 0
     return f(e1["E1"].values)
 
+def statDomains(domains):
+    sns.violinplot(x="chr", y="size", data=domains)
+    plt.savefig("results/" + os.path.basename(domains_file) + ".sizedist.png")
+    plt.clf()
+    with open("results/" + os.path.basename(domains_file)+"_stats.txt","w") as fout:
+        fout.write("Average domain size: " + str(domains["size"].median())+"\n")
+        fout.write("Mean domain size: " + str(domains["size"].mean())+"\n")
+        fout.write("Number of domains: " + str(len(domains))+ "\n")
+
 # for each domain boundaries compute insulatory score
 # insulatory score is simply an average obs/expected for rhombus with apex in domain boundary
-
+# old version, use hicExplorer_scores for new domains
 def get_insulation_of_domain_boundaries(domains, offset = 1, dist = 3):
     def get_insulation(chr, position, binsize, hic_data):
         if position - (dist+1)*binsize <= 0:
@@ -105,32 +117,58 @@ def get_insulation_of_domain_boundaries(domains, offset = 1, dist = 3):
     #plt.savefig("results/"+os.path.basename(hic_file)+os.path.basename(domains_file)+".png")
     return domains
 
-def plot_E1_from_domains_size_dependence():
-    def getOverlapingDomainLength(e1, domains):
+# for each domain boundaries read insulatory score from hicExplorer-based bedgraph
+# old version, use hicExplorer_scores for new domains
+def get_insulation_of_domain_boundaries_hicExplorer_scores(domains, scores_file, domains_resolution):
+    def get_insulation(chr, pos, scores,resolution):
+        score_values = []
+        for bin in [resolution // 2, -1*resolution // 2]:
+            score = scores.loc[chr,pos+bin]["score"]
+            if len(score) != 1:
+                raise
+            score_values.append(score.iloc[0])
+        assert len(score_values) == 2
+        return np.average(score_values)
+
+    scores = pd.read_csv(scores_file,sep="\t",header=None,columns=["chr","start","end","score"])
+    scores.set_index(keys=["chr","start"])
+    domains["insulation_l"] = domains.apply(lambda x: get_insulation(x.chr,x.start,scores,
+                                                             domains_resolution),
+                                            axis="columns")
+    domains["insulation_r"] = domains.apply(lambda x: get_insulation(x.chr,x.end,scores,
+                                                             domains_resolution),
+                                            axis="columns")
+    return domains
+
+def plot_E1_from_domains_size_dependence(E1, length_bin = 25000, maxlength = 400000):
+    def getOverlapingDomainLength(e1, domains, length_bin, maxlength):
         overlap = domains.loc[e1.chr].index.overlaps(e1.intervals)
         domain = domains.loc[e1.chr][overlap]
         if len(domain) == 0:
             # print ("Warning, no domain found for e1 bin ",e1)
             return -1
         if len(domain) > 1:
-            print("Warning, >1 domain found for e1 bin ", e1)
-            raise
-        l = domain.end.iloc[0] - domain.start.iloc[0]
-        if l > 400000:
-            return 400000 // 50000
-        else:
-            return l // 50000
+            #print("Warning, >1 domain found for e1 bin ", e1)
+            return -1
+        l = min(maxlength,domain["size"].iloc[0])
+        return ((l // length_bin) * length_bin) // 1000 # return binned length in kb
 
     print("Getting domain length...")
-    E1["domain_length"] = E1.apply(getOverlapingDomainLength, axis="columns", domains=domains)
-
+    E1["domain_length"] = E1.apply(getOverlapingDomainLength, axis="columns",
+                                   domains=domains, length_bin =length_bin, maxlength = maxlength)
+    E1.query("domain_length != -1",inplace=True)
+    print (E1["E1"].max(),E1["E1"].min(),E1["E1"].median())
     print("Plotting")
-    ax = sns.violinplot(x="domain_length", y="E1", data=E1)
-    ax.set(xlabel="Domain length, x50-kb")
+    ax = sns.violinplot(x="domain_length", y="E1", data=E1, palette="RdBu")
+    ax.set_xlabel("Domain length, kb", fontsize=14)
+    ax.set_ylabel("E1", fontsize=14)
     plt.axhline(y=0)
-    plt.show()
+    plt.savefig("results/"+os.path.basename(domains_file)+".E1_vs_size.png",dpi=600)
+    plt.clf()
 
-def compartments_switch_at_domains_boundaries(domains, E1, useHash = False):
+def compartments_switch_at_domains_boundaries(domains, E1,
+                                              score_file, domains_resolution,
+                                              useHash = False):
     def get_E1_near_boundaries(domain,E1,k,binsize):
         #get interval +/-k beens near boundary
 
@@ -163,11 +201,14 @@ def compartments_switch_at_domains_boundaries(domains, E1, useHash = False):
     k = 3 # how many bins near boundary to use
     hashfile = os.path.join("hashedData",
                             md5((domains_file+compartments_file+str(k)).encode()).hexdigest() + \
-                            "."+compartments_switch_at_domains_boundaries.__name__+".dump")
+                            "."+compartments_switch_at_domains_boundaries.__name__+".new.dump")
     if useHash and os.path.exists(hashfile):
         domains = pickle.load(open(hashfile,"rb"))
     else:
-        domains = get_insulation_of_domain_boundaries(domains)
+        domains.query("size >= 125000", inplace=True)
+        domains = get_insulation_of_domain_boundaries_hicExplorer_scores(domains,scores_file=score_file,
+                                                                         domains_resolution=domains_resolution)
+        raise
         domains["E1_boundary"] = domains.apply(get_E1_near_boundaries,axis="columns",
                                            E1=E1,k=k,binsize=binsize)
         pickle.dump(domains,open(hashfile,"wb"))
@@ -324,20 +365,25 @@ def compartments_switch_at_domains_boundaries(domains, E1, useHash = False):
          ), ignore_index=True).to_csv(basename+"ins.bedGraph",sep="\t",index=False)
 
 # sie of the Hi-C bin. Should be same for E1 and domains
-binsize = 25000
+domains_resolution = 5000
 
-hic_file = "hics/AcolNg_V3.hic.25000.oe.1000000.MB"
-domains_file = "Domains/AcolNg_4.35.ann"
+# hic_file = "hics/AcolNg_V3.hic.25000.oe.1000000.MB"
+# domains_file = "https://genedev.bionet.nsc.ru/site/hic_out/Anopheles/hicExplorer_TADs/results/AalbS2_V4.1000.hic_5000.h5.delt.0.05_domains.2D"
+domains_file = "https://genedev.bionet.nsc.ru/site/hic_out/Anopheles/hicExplorer_TADs/results/AatrE3_V4.1000.hic_5000.h5.delt.0.05_domains.2D"
+scores_file = domains_file.replace("_domains.2D","_score.bedgraph")
+
 compartments_file = \
-    "http://genedev.bionet.nsc.ru/site/hic_out/Anopheles/eig/v3/AcolNg.v3.tpm.my.eig.bedGraph"
+    "https://genedev.bionet.nsc.ru/site/hic_out/Anopheles/eig/v3/AatrE3_V3.tpm.my.eig.bedGraph"
 
+print (domains_file)
 domains = read_domains(domains_file)
-print (domains.head())
-assert (domains.start % binsize == 0).all()
+assert (domains.start % domains_resolution == 0).all()
+
+# plot violin plot of domain sizes, print mean and average to file
+statDomains(domains)
 
 E1 = read_compartments(compartments_file)
-print (E1.head())
-assert (E1.start % binsize == 0).all()
+# assert (E1.start % binsize == 0).all()
 
 print ("Starting analysis....")
 
@@ -345,15 +391,19 @@ print ("Starting analysis....")
 # Motivated by the visual observation that long domains
 # are predominantly located in the B-compartment
 
-# plot_E1_from_domains_size_dependence()
+#plot_E1_from_domains_size_dependence(E1)
+
 
 # This function will add insulation score for each genomic boundary
 # technically this will add insulation_r / l fields to domain dframe
+get_insulation_of_domain_boundaries_hicExplorer_scores(domains,scores_file=scores_file,
+                                                       domains_resolution=domains_resolution)
+raise
 
-#for offset in [1,2]:
-#    for dist in range(offset+1,7):
-#        print (offset,dist)
-#        get_insulation_of_domain_boundaries(domains, offset=offset, dist=dist)
-# get_insulation_of_domain_boundaries(domains)
+for offset in [1,2]:
+   for dist in range(offset+1,7):
+       print (offset,dist)
+       get_insulation_of_domain_boundaries(domains, offset=offset, dist=dist)
+get_insulation_of_domain_boundaries(domains)
 
 compartments_switch_at_domains_boundaries(domains, E1, useHash=True)
