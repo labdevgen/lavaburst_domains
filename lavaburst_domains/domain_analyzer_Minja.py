@@ -22,6 +22,18 @@ def read_domains(file):
     domains.drop(["start2","chr2","end2"], axis="columns", inplace=True)
     domains.rename(columns={"chr1":"chr","start1":"start","end1":"end"},
                    inplace=True)
+
+    c_res_mism_st = domains.start[domains.start % domains_resolution != 0].count()
+    c_res_mism_end = domains.end[domains.end % domains_resolution != 0].count()
+    if c_res_mism_st + c_res_mism_end != 0:
+        print ("----WARNING! ",c_res_mism_st + c_res_mism_end," domain boundaries do not match resolution")
+        print (c_res_mism_st," for starts, ",c_res_mism_end," for ends")
+    domains["start"] = (domains["start"] // domains_resolution) * domains_resolution
+    domains["end"] = (domains["end"] // domains_resolution) * domains_resolution
+
+    assert (domains.start % domains_resolution == 0).all()
+    assert (domains.end % domains_resolution == 0).all()
+
     domains["intervals"] = pd.arrays.IntervalArray.from_arrays(
         domains.start,domains.end,closed="both")
     domains.index = pd.MultiIndex.from_frame(domains[["chr", "intervals"]])
@@ -121,23 +133,24 @@ def get_insulation_of_domain_boundaries(domains, offset = 1, dist = 3):
 # old version, use hicExplorer_scores for new domains
 def get_insulation_of_domain_boundaries_hicExplorer_scores(domains, scores_file, domains_resolution):
     def get_insulation(chr, pos, scores,resolution):
-        score_values = []
-        for bin in [resolution // 2, -1*resolution // 2]:
-            score = scores.loc[chr,pos+bin]["score"]
-            if len(score) != 1:
-                raise
-            score_values.append(score.iloc[0])
-        assert len(score_values) == 2
-        return np.average(score_values)
+        if (chr,pos-resolution//2) in scores.index:
+            return scores.loc[(chr,pos-resolution//2)]["score"]
+        else:
+            return np.nan
 
-    scores = pd.read_csv(scores_file,sep="\t",header=None,columns=["chr","start","end","score"])
-    scores.set_index(keys=["chr","start"])
+    scores = pd.read_csv(scores_file,sep="\t",header=None,names=["chr","start","end","score"])
+    scores.set_index(keys=["chr","start"], inplace=True)
+    assert scores.index.is_unique
+
     domains["insulation_l"] = domains.apply(lambda x: get_insulation(x.chr,x.start,scores,
                                                              domains_resolution),
                                             axis="columns")
     domains["insulation_r"] = domains.apply(lambda x: get_insulation(x.chr,x.end,scores,
                                                              domains_resolution),
                                             axis="columns")
+    print (pd.isna(domains["insulation_l"]).sum()," left boundaries do not have defined insulation index")
+    print(pd.isna(domains["insulation_r"]).sum(), " right boundaries do not have defined insulation index")
+    domains.dropna(inplace=True)
     return domains
 
 def plot_E1_from_domains_size_dependence(E1, length_bin = 25000, maxlength = 400000):
@@ -208,7 +221,6 @@ def compartments_switch_at_domains_boundaries(domains, E1,
         domains.query("size >= 125000", inplace=True)
         domains = get_insulation_of_domain_boundaries_hicExplorer_scores(domains,scores_file=score_file,
                                                                          domains_resolution=domains_resolution)
-        raise
         domains["E1_boundary"] = domains.apply(get_E1_near_boundaries,axis="columns",
                                            E1=E1,k=k,binsize=binsize)
         pickle.dump(domains,open(hashfile,"wb"))
@@ -377,10 +389,9 @@ compartments_file = \
 
 print (domains_file)
 domains = read_domains(domains_file)
-assert (domains.start % domains_resolution == 0).all()
 
 # plot violin plot of domain sizes, print mean and average to file
-statDomains(domains)
+# statDomains(domains)
 
 E1 = read_compartments(compartments_file)
 # assert (E1.start % binsize == 0).all()
