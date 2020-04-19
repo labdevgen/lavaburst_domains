@@ -179,72 +179,10 @@ def plot_E1_from_domains_size_dependence(E1, length_bin = 25000, maxlength = 400
     plt.savefig("results/"+os.path.basename(domains_file)+".E1_vs_size.png",dpi=600)
     plt.clf()
 
-def compartments_switch_at_domains_boundaries(domains, E1,
-                                              score_file, domains_resolution,
-                                              useHash = False):
-    def get_E1_near_boundaries(domain,E1,k,binsize):
-        #get interval +/-k beens near boundary
 
-        left_boundary_interval = pd.Interval(domain.start - k*binsize,
-                                                   domain.start + (k+1)*binsize,
-                                                   closed="neither")
-        right_boundary_interval = pd.Interval(domain.end+1 - (k+1)*binsize,
-                                                   domain.end+1 + k*binsize,
-                                                   closed="neither")
-        # print (E1.loc[domain.chr].index)
-        # print (left_boundary_interval)
-        overlap_left = E1.loc[domain.chr].index.overlaps(left_boundary_interval)
-        overlap_left = E1.loc[domain.chr][overlap_left]
-
-        overlap_right = E1.loc[domain.chr].index.overlaps(right_boundary_interval)
-        overlap_right = E1.loc[domain.chr][overlap_right]
-
-        # check overlap size
-        if len(overlap_left) != (k*2 + 1):
-            return None
-        if len(overlap_right) != (k*2 + 1):
-            return None
-
-        return (overlap_left.E1.values.tolist() + overlap_right.E1.values.tolist())
-
-        #get all e1 values vector
-        #contactenate vectors for both boundaries
-        #return
-
-    k = 3 # how many bins near boundary to use
-    hashfile = os.path.join("hashedData",
-                            md5((domains_file+compartments_file+str(k)).encode()).hexdigest() + \
-                            "."+compartments_switch_at_domains_boundaries.__name__+".new.dump")
-    if useHash and os.path.exists(hashfile):
-        domains = pickle.load(open(hashfile,"rb"))
-    else:
-        domains.query("size >= 125000", inplace=True)
-        domains = get_insulation_of_domain_boundaries_hicExplorer_scores(domains,scores_file=score_file,
-                                                                         domains_resolution=domains_resolution)
-        domains["E1_boundary"] = domains.apply(get_E1_near_boundaries,axis="columns",
-                                           E1=E1,k=k,binsize=binsize)
-        pickle.dump(domains,open(hashfile,"wb"))
-
-    # E1_boundary = None when some of the E1 value missing
-    # assert that this does not happen often
-    assert pd.isna(domains["E1_boundary"]).sum() < (len(domains) / 10)
-    print (domains.head())
-    domains.query("end-start >= (@k+1)*@binsize-1",inplace=True)
-    domains = domains[pd.notna(domains["E1_boundary"])]
-    boundaries = domains["E1_boundary"].dropna().values.tolist()
-    boundaries = np.array(boundaries)
-
-    # whether to consider each boundary separately or draw whole domain
-    # some plots work only for separate_boundaries = True
-    separate_boundaries = True
-
-    # concat two boundaries
-    if separate_boundaries:
-        b1 = boundaries[:,:k*2+1]
-        b2 = np.fliplr(boundaries[:,k*2+1:])
-        boundaries = np.vstack((b1,b2))
-        boundary_index = boundaries.shape[1] // 2 + 1
-
+def E1_near_boundaries_dendro(domains,boundaries,
+                              separate_boundaries,
+                              averaged = None):
     ######################## dendrogramm #################
     print("Drawing boundaries dendrogramm")
 
@@ -270,7 +208,8 @@ def compartments_switch_at_domains_boundaries(domains, E1,
     lencolors = list(map(length2color_mapper.to_rgba,domainlengths))
 
     if separate_boundaries:
-        colors_list = [lencolors*2,inscolors_l+inscolors_r]
+        # colors_list = [lencolors*2,inscolors_l+inscolors_r]
+        colors_list = [inscolors_l + inscolors_r]
     else:
         colors_list = [lencolors,inscolors_l,inscolors_r]
 
@@ -284,15 +223,21 @@ def compartments_switch_at_domains_boundaries(domains, E1,
 
 
     if separate_boundaries:
-        averaged = np.vstack((np.average(boundaries[:,:boundary_index],axis=1),
-                              np.average(boundaries[:,boundary_index+1:],axis=1))).T
-        assert len(averaged)==len(boundaries)
-        """
         distances = pdist(averaged, metric=lambda x,y: abs((x[0]-x[1])-(y[0]-y[1])))
         # distances = np.nan_to_num(distances,nan=0)
         link = linkage(distances, optimal_ordering=True)
+        assert (boundaries.shape[1] - 1) % 2 == 0
+        k = (boundaries.shape[1] - 1) // 2
     else:
         link = linkage(pdist(boundaries), optimal_ordering=True)
+        assert (boundaries.shape[1] % 2) == 0
+        k = (boundaries.shape[1] - 2) // 2
+
+    labels = (-1*(E1_resolution//1000)*(np.arange(k)+1))[::-1].tolist() + \
+                            ["B"] + \
+             ((E1_resolution//1000)*(np.arange(k)+1)).tolist()
+    labels = map(str,labels)
+    boundaries = pd.DataFrame(data=boundaries,columns=labels)
 
     ax = sns.clustermap(boundaries,
                         row_cluster=True,
@@ -301,24 +246,123 @@ def compartments_switch_at_domains_boundaries(domains, E1,
                         #metric="seuclidean",
                         #figsize=(max(1,(k*2+1)*2//10),
                         #         max(20,len(boundaries)//100)),
+                        figsize=(3,10),
                         yticklabels=False,
-                        row_colors=colors_list,
+                        # row_colors=colors_list,
                         norm=E1mapper,
-                        cmap="bwr"
+                        cmap="bwr",
+                        cbar_pos=(1, .2, .04, .3),
+                        cbar_kws = {"label":"cePC1 value"}
                         )
-    ax.ax_heatmap.axvline(x=k+0.5)
+    ax.ax_row_dendrogram.set_visible(False)
+    ax.ax_heatmap.axvline(x=k+0.5, linewidth=2)
+    ax.ax_heatmap.set_xlabel("Distance to boundary, kb", fontsize=14)
+    hm = ax.ax_heatmap.get_position()
+    ax.ax_heatmap.set_position([hm.x0, hm.y0, hm.width, hm.height*1.25])
+    ax.ax_heatmap.set_title(shortname, fontsize=16, fontstyle="italic")
     if not separate_boundaries:
         ax.ax_heatmap.axvline(x=2*k+1+k+0.5)
         ax.ax_heatmap.axvline(x=2*k+1,ls="--")
-    c = plt.colorbar(length2color_mapper, ax=ax.ax_col_dendrogram,
-                     orientation="horizontal",
-                     fraction=0.5)
-    c.set_label("Domain size")
+    #c = plt.colorbar(length2color_mapper, ax=ax.ax_col_dendrogram,
+    #                 orientation="horizontal",
+    #                 fraction=0.5)
+    #c.set_label("Domain size")
 
-    plt.show()
-    """
-
+    #plt.tight_layout()
+    ax.savefig("results/"+os.path.basename(domains_file)+"_E1dendro.png")
     plt.clf()
+
+
+def compartments_switch_at_domains_boundaries(domains, E1, E1_resolutoin,
+                                              TADs_resolution,score_file,
+                                              useHash = False):
+    def get_E1_near_boundaries(domain,E1,k,binsize):
+        #get interval +/-k beens near boundary
+
+        # shift start and end to the nearest E1 bin
+        start = (domain.start // binsize  + int(domain.start % binsize > binsize // 2))*binsize
+        end = (domain.end // binsize + int(domain.end % binsize > binsize // 2)) * binsize
+        assert end > start
+        assert abs(end-domain.end) < binsize
+        assert abs(start-domain.start) < binsize
+
+        left_boundary_interval = pd.Interval(start - k*binsize,
+                                                   start + (k+1)*binsize,
+                                                   closed="neither")
+        right_boundary_interval = pd.Interval(end - (k+1)*binsize,
+                                                   end + k*binsize,
+                                                   closed="neither")
+        # print (E1.loc[domain.chr].index)
+        # print (left_boundary_interval)
+        overlap_left = E1.loc[domain.chr].index.overlaps(left_boundary_interval)
+        overlap_left = E1.loc[domain.chr][overlap_left]
+
+        overlap_right = E1.loc[domain.chr].index.overlaps(right_boundary_interval)
+        overlap_right = E1.loc[domain.chr][overlap_right]
+
+        # check overlap size
+        if len(overlap_left) > (k*2 + 1):
+            print (start)
+            print(left_boundary_interval)
+            print (overlap_left)
+            raise
+        elif len(overlap_left) < (k*2 + 1):
+            return None
+
+        if len(overlap_right) > (k*2 + 1):
+            print(right_boundary_interval)
+            raise
+        elif len(overlap_right) < (k*2 + 1):
+            return None
+
+        return (overlap_left.E1.values.tolist() + overlap_right.E1.values.tolist())
+
+        #get all e1 values vector
+        #contactenate vectors for both boundaries
+        #return
+
+    k = 3 # how many bins near boundary to use
+    hashfile = os.path.join("hashedData",
+                            md5((domains_file+compartments_file+str(k)).encode()).hexdigest() + \
+                            "."+compartments_switch_at_domains_boundaries.__name__+".v2.dump")
+    if useHash and os.path.exists(hashfile):
+        domains = pickle.load(open(hashfile,"rb"))
+    else:
+        domains.query("size >= @E1_resolutoin*2", inplace=True)
+        domains = get_insulation_of_domain_boundaries_hicExplorer_scores(domains,scores_file=score_file,
+                                                                         domains_resolution=TADs_resolution)
+        domains["E1_boundary"] = domains.apply(get_E1_near_boundaries,axis="columns",
+                                           E1=E1,k=k,binsize=E1_resolutoin)
+        pickle.dump(domains,open(hashfile,"wb"))
+
+    # E1_boundary = None when some of the E1 value missing
+    # assert that this does not happen often
+    print ("For this numner of TADs E1 was not defined: ",
+           pd.isna(domains["E1_boundary"]).sum())
+    assert pd.isna(domains["E1_boundary"]).sum() < (len(domains) / 10)
+    domains.query("end-start >= (@k+1)*@E1_resolution",inplace=True)
+    domains = domains[pd.notna(domains["E1_boundary"])]
+    print ("After all pre-filters, ",len(domains)," domains left in analysis")
+    boundaries = domains["E1_boundary"].values.tolist()
+    boundaries = np.array(boundaries)
+
+    # whether to consider each boundary separately or draw whole domain
+    # some plots work only for separate_boundaries = True
+    separate_boundaries = True
+
+    # concat two boundaries
+    if separate_boundaries:
+        b1 = boundaries[:,:k*2+1]
+        b2 = np.fliplr(boundaries[:,k*2+1:])
+        boundaries = np.vstack((b1,b2))
+        boundary_index = boundaries.shape[1] // 2 + 1
+        averaged = np.vstack((np.average(boundaries[:,:boundary_index],axis=1),
+                              np.average(boundaries[:,boundary_index+1:],axis=1))).T
+        assert len(averaged)==len(boundaries)
+
+    # draw dendro figure
+    E1_near_boundaries_dendro(domains=domains,boundaries=boundaries,
+                              separate_boundaries=True,averaged=averaged)
 
     # next plots are only for separate boundaries
     if not separate_boundaries:
@@ -328,22 +372,43 @@ def compartments_switch_at_domains_boundaries(domains, E1,
     print("Drawing E1-diff vs insulation scatterplot")
     # on X-axes E1 difference
     # on Y-axes insulation score
-    sns.scatterplot(x=np.subtract(averaged[:,0],averaged[:,1]),
-                    y=domains.insulation_l.values.tolist()+domains.insulation_r.values.tolist()
+
+    # first compute genome-wide average of E1 differences
+    temp = [E1["E1"].shift(periods=i).values for i in np.arange(0,2*k+1)[::-1]]
+    temp = np.vstack(temp).T
+    temp =  temp[~np.isnan(temp).any(axis=1)]
+    expected_E1_average = np.vstack((np.average(temp[:,:boundary_index],axis=1),
+                              np.average(temp[:,boundary_index+1:],axis=1))).T
+    expected_E1_diff = np.abs(np.subtract(expected_E1_average[:,0],expected_E1_average[:,1]))
+
+    plt.clf()
+    E1diff = np.abs(np.subtract(averaged[:,0],averaged[:,1]))
+    if min(E1diff) == 0:
+        pseudocount = min(E1diff[E1diff>0])/1000
+    else:
+        pseudocount = 0
+    sp = sns.scatterplot(E1diff+pseudocount,
+                    y=domains.insulation_l.values.tolist()+domains.insulation_r.values.tolist(),
+                         hue=np.sign(np.multiply(averaged[:,0],averaged[:,1]))
                 )
-    #plt.show()
+    #sp.set_xscale('log')
+    sp.axvline(x=np.percentile(expected_E1_diff,25), ls="--")
+    sp.axvline(x=np.percentile(expected_E1_diff, 50), ls="--")
+    sp.set_xlabel("cePC1 difference", fontsize = 12)
+    sp.set_ylabel("insulatory score", fontsize = 12)
+    sp.axhline(y=0, ls="--")
+    plt.show()
 
     ################# examples of insulated domains w/o E1 change #############
-    abs_E1diff = np.abs(np.subtract(averaged[:,0],averaged[:,1]))
-    E1diff_threashold = np.percentile(abs_E1diff,25)
+    E1diff_threashold = np.percentile(E1diff,10)
     insulation_threashold = np.percentile(domains.insulation_l.values.tolist()+\
                                       domains.insulation_r.values.tolist(),
                                       25)
-    assert len(abs_E1diff) % 2==0
+    assert len(E1diff) % 2==0
     mask_l = (domains.insulation_l.values < insulation_threashold) & \
-         (abs_E1diff[:len(abs_E1diff)//2] < E1diff_threashold)
+         (E1diff[:len(E1diff)//2] < E1diff_threashold)
     mask_r = (domains.insulation_r.values < insulation_threashold) & \
-             (abs_E1diff[len(abs_E1diff)//2:] < E1diff_threashold)
+             (E1diff[len(E1diff)//2:] < E1diff_threashold)
 
     domain_colors = np.array(["255,255,255"]*len(domains))
     domain_colors[mask_l] = "128,128,0" # Olive
@@ -364,37 +429,39 @@ def compartments_switch_at_domains_boundaries(domains, E1,
       with open(basename+"insulated.examples"+file+".ann","w") as fout:
         domains.iloc[mask,:].apply(writeJuicerAnnotation, axis="columns", f=fout, color=color)
 
-    raise
-    pd.concat(
-        (pd.DataFrame([domains.chr,
-                      domains.start,
-                      domains.start+binsize,
-                      domains.insulation_l]).rename(columns={"insulation_l":"insulation"}),
-        pd.DataFrame([domains.chr,
-                      domains.end+1,
-                      domains.end+1+binsize,
-                      domains.insulation_r]).rename(columns={"insulation_r":"insulation"})
-         ), ignore_index=True).to_csv(basename+"ins.bedGraph",sep="\t",index=False)
-
 # sie of the Hi-C bin. Should be same for E1 and domains
 domains_resolution = 5000
 
 # hic_file = "hics/AcolNg_V3.hic.25000.oe.1000000.MB"
 # domains_file = "https://genedev.bionet.nsc.ru/site/hic_out/Anopheles/hicExplorer_TADs/results/AalbS2_V4.1000.hic_5000.h5.delt.0.05_domains.2D"
-domains_file = "https://genedev.bionet.nsc.ru/site/hic_out/Anopheles/hicExplorer_TADs/results/AatrE3_V4.1000.hic_5000.h5.delt.0.05_domains.2D"
-scores_file = domains_file.replace("_domains.2D","_score.bedgraph")
+domains_file = "https://genedev.bionet.nsc.ru/site/hic_out/Anopheles/hicExplorer_TADs/results/AalbS2_V4.5000.TADs_editted.2D"
+datasets = {
+    "AatrE3_V4.5000.TADs_edited.2D":{"scores":"https://genedev.bionet.nsc.ru/site/hic_out/Anopheles/hicExplorer_TADs/results/AatrE3_V4.1000.hic_5000.h5.delt.0.05_score.bedgraph",
+                                     "ttile":"An. atroparvus",
+                                     "E1":"https://genedev.bionet.nsc.ru/site/hic_out/Anopheles/eig/v3/AatrE3_V3.tpm.my.eig.bedGraph"},
+    "AalbS2_V4.5000.TADs_editted.2D":{"scores":"https://genedev.bionet.nsc.ru/site/hic_out/Anopheles/hicExplorer_TADs/results/AalbS2_V3.1000.hic_5000.h5.delt.0.05_score.bedgraph",
+                                     "ttile":"An. albimanus",
+                                      "E1":"https://genedev.bionet.nsc.ru/site/hic_out/Anopheles/eig/v3/AalbS2_V3.tpm.my.eig.bedGraph"},
+    "AsteI2_V4.5000.TADs_editted.2D":{"scores":"https://genedev.bionet.nsc.ru/site/hic_out/Anopheles/hicExplorer_TADs/results/AsteI2_V4.1000.hic_5000.h5.delt.0.05_score.bedgraph",
+                                     "ttile":"An. stephensi",
+                                      "E1":"https://genedev.bionet.nsc.ru/site/hic_out/Anopheles/eig/v3/AsteI2_V3.tpm.my.eig.bedGraph"}
+}
 
-compartments_file = \
-    "https://genedev.bionet.nsc.ru/site/hic_out/Anopheles/eig/v3/AatrE3_V3.tpm.my.eig.bedGraph"
+scores_file = datasets[os.path.basename(domains_file)]["scores"]
+shortname = datasets[os.path.basename(domains_file)]["title"]
+compartments_file = datasetsos[os.path.basename(domains_file)]["E1"]
 
-print (domains_file)
+E1_resolution = 25000
+
+print ("Domains: ",domains_file)
+print ("Compartments: ", compartments_file)
 domains = read_domains(domains_file)
 
 # plot violin plot of domain sizes, print mean and average to file
-# statDomains(domains)
+statDomains(domains)
 
 E1 = read_compartments(compartments_file)
-# assert (E1.start % binsize == 0).all()
+assert (E1.start % E1_resolution == 0).all()
 
 print ("Starting analysis....")
 
@@ -402,19 +469,15 @@ print ("Starting analysis....")
 # Motivated by the visual observation that long domains
 # are predominantly located in the B-compartment
 
-#plot_E1_from_domains_size_dependence(E1)
+plot_E1_from_domains_size_dependence(E1)
 
 
 # This function will add insulation score for each genomic boundary
 # technically this will add insulation_r / l fields to domain dframe
-get_insulation_of_domain_boundaries_hicExplorer_scores(domains,scores_file=scores_file,
-                                                       domains_resolution=domains_resolution)
-raise
+# get_insulation_of_domain_boundaries_hicExplorer_scores(domains,scores_file=scores_file,
+#                                                       domains_resolution=domains_resolution)
 
-for offset in [1,2]:
-   for dist in range(offset+1,7):
-       print (offset,dist)
-       get_insulation_of_domain_boundaries(domains, offset=offset, dist=dist)
-get_insulation_of_domain_boundaries(domains)
-
-compartments_switch_at_domains_boundaries(domains, E1, useHash=True)
+compartments_switch_at_domains_boundaries(domains, E1, E1_resolutoin = E1_resolution,
+                                          TADs_resolution=domains_resolution,
+                                          score_file=scores_file,
+                                          useHash=True)
