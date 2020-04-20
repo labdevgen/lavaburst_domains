@@ -60,10 +60,14 @@ def statE1(domain,E1,f):
     return f(e1["E1"].values)
 
 def statDomains(domains):
+    results_file = "results/" + os.path.basename(domains_file)+"_stats.txt"
+    # exit if results file exists
+    if os.path.isfile(results_file) and not redraw_figs:
+        return
     sns.violinplot(x="chr", y="size", data=domains)
     plt.savefig("results/" + os.path.basename(domains_file) + ".sizedist.png")
     plt.clf()
-    with open("results/" + os.path.basename(domains_file)+"_stats.txt","w") as fout:
+    with open(results_file,"w") as fout:
         fout.write("Average domain size: " + str(domains["size"].median())+"\n")
         fout.write("Mean domain size: " + str(domains["size"].mean())+"\n")
         fout.write("Number of domains: " + str(len(domains))+ "\n")
@@ -166,6 +170,11 @@ def plot_E1_from_domains_size_dependence(E1, length_bin = 25000, maxlength = 400
         l = min(maxlength,domain["size"].iloc[0])
         return ((l // length_bin) * length_bin) // 1000 # return binned length in kb
 
+    figure_path = "results/"+os.path.basename(domains_file)+".E1_vs_size.png"
+
+    # do not start analysis if resulting figure exists
+    if os.path.isfile(figure_path) and not redraw_figs:
+        return
     print("Getting domain length...")
     E1["domain_length"] = E1.apply(getOverlapingDomainLength, axis="columns",
                                    domains=domains, length_bin =length_bin, maxlength = maxlength)
@@ -176,7 +185,7 @@ def plot_E1_from_domains_size_dependence(E1, length_bin = 25000, maxlength = 400
     ax.set_xlabel("Domain length, kb", fontsize=14)
     ax.set_ylabel("E1", fontsize=14)
     plt.axhline(y=0)
-    plt.savefig("results/"+os.path.basename(domains_file)+".E1_vs_size.png",dpi=600)
+    plt.savefig(figure_path,dpi=600)
     plt.clf()
 
 
@@ -184,6 +193,10 @@ def E1_near_boundaries_dendro(domains,boundaries,
                               separate_boundaries,
                               averaged = None):
     ######################## dendrogramm #################
+    fig_path = "results/"+os.path.basename(domains_file)+"_E1dendro.png"
+    if os.path.isfile(fig_path) and not redraw_figs:
+        return
+
     print("Drawing boundaries dendrogramm")
 
     # set colormaps
@@ -269,7 +282,7 @@ def E1_near_boundaries_dendro(domains,boundaries,
     #c.set_label("Domain size")
 
     #plt.tight_layout()
-    ax.savefig("results/"+os.path.basename(domains_file)+"_E1dendro.png")
+    ax.savefig(fig_path)
     plt.clf()
 
 
@@ -337,6 +350,8 @@ def compartments_switch_at_domains_boundaries(domains, E1, E1_resolutoin,
 
     # E1_boundary = None when some of the E1 value missing
     # assert that this does not happen often
+    print (domains.head())
+    print (E1.head())
     print ("For this numner of TADs E1 was not defined: ",
            pd.isna(domains["E1_boundary"]).sum())
     assert pd.isna(domains["E1_boundary"]).sum() < (len(domains) / 10)
@@ -429,27 +444,31 @@ def compartments_switch_at_domains_boundaries(domains, E1, E1_resolutoin,
       with open(basename+"insulated.examples"+file+".ann","w") as fout:
         domains.iloc[mask,:].apply(writeJuicerAnnotation, axis="columns", f=fout, color=color)
 
+datasets = {
+    "AatrE3_V4.5000.TADs_editted.2D":{"scores":"https://genedev.bionet.nsc.ru/site/hic_out/Anopheles/hicExplorer_TADs/results/AatrE3_V4.1000.hic_5000.h5.delt.0.05_score.bedgraph",
+                                     "title":"An. atroparvus",
+                                     "E1":"https://genedev.bionet.nsc.ru/site/hic_out/Anopheles/eig/v3/AatrE3_V3.tpm.my.eig.bedGraph"},
+    "AalbS2_V4.5000.TADs_editted.2D":{"scores":"https://genedev.bionet.nsc.ru/site/hic_out/Anopheles/hicExplorer_TADs/results/AalbS2_V3.1000.hic_5000.h5.delt.0.05_score.bedgraph",
+                                     "title":"An. albimanus",
+                                      "E1":"https://genedev.bionet.nsc.ru/site/hic_out/Anopheles/eig/v3/AalbS2_V3.tpm.my.eig.bedGraph"},
+    "AsteI2_V4.5000.TADs_editted.2D":{"scores":"https://genedev.bionet.nsc.ru/site/hic_out/Anopheles/hicExplorer_TADs/results/AsteI2_V4.1000.hic_5000.h5.delt.0.05_score.bedgraph",
+                                     "title":"An. stephensi",
+                                      "E1":"https://genedev.bionet.nsc.ru/site/hic_out/Anopheles/eig/v3/AsteI2_V3.tpm.my.eig.bedGraph"}
+}
+
+# do analysis if output figures exist?
+redraw_figs = False
+
 # sie of the Hi-C bin. Should be same for E1 and domains
 domains_resolution = 5000
 
 # hic_file = "hics/AcolNg_V3.hic.25000.oe.1000000.MB"
 # domains_file = "https://genedev.bionet.nsc.ru/site/hic_out/Anopheles/hicExplorer_TADs/results/AalbS2_V4.1000.hic_5000.h5.delt.0.05_domains.2D"
-domains_file = "https://genedev.bionet.nsc.ru/site/hic_out/Anopheles/hicExplorer_TADs/results/AalbS2_V4.5000.TADs_editted.2D"
-datasets = {
-    "AatrE3_V4.5000.TADs_edited.2D":{"scores":"https://genedev.bionet.nsc.ru/site/hic_out/Anopheles/hicExplorer_TADs/results/AatrE3_V4.1000.hic_5000.h5.delt.0.05_score.bedgraph",
-                                     "ttile":"An. atroparvus",
-                                     "E1":"https://genedev.bionet.nsc.ru/site/hic_out/Anopheles/eig/v3/AatrE3_V3.tpm.my.eig.bedGraph"},
-    "AalbS2_V4.5000.TADs_editted.2D":{"scores":"https://genedev.bionet.nsc.ru/site/hic_out/Anopheles/hicExplorer_TADs/results/AalbS2_V3.1000.hic_5000.h5.delt.0.05_score.bedgraph",
-                                     "ttile":"An. albimanus",
-                                      "E1":"https://genedev.bionet.nsc.ru/site/hic_out/Anopheles/eig/v3/AalbS2_V3.tpm.my.eig.bedGraph"},
-    "AsteI2_V4.5000.TADs_editted.2D":{"scores":"https://genedev.bionet.nsc.ru/site/hic_out/Anopheles/hicExplorer_TADs/results/AsteI2_V4.1000.hic_5000.h5.delt.0.05_score.bedgraph",
-                                     "ttile":"An. stephensi",
-                                      "E1":"https://genedev.bionet.nsc.ru/site/hic_out/Anopheles/eig/v3/AsteI2_V3.tpm.my.eig.bedGraph"}
-}
+domains_file = "https://genedev.bionet.nsc.ru/site/hic_out/Anopheles/hicExplorer_TADs/results/AsteI2_V4.5000.TADs_editted.2D"
 
 scores_file = datasets[os.path.basename(domains_file)]["scores"]
 shortname = datasets[os.path.basename(domains_file)]["title"]
-compartments_file = datasetsos[os.path.basename(domains_file)]["E1"]
+compartments_file = datasets[os.path.basename(domains_file)]["E1"]
 
 E1_resolution = 25000
 
@@ -480,4 +499,4 @@ plot_E1_from_domains_size_dependence(E1)
 compartments_switch_at_domains_boundaries(domains, E1, E1_resolutoin = E1_resolution,
                                           TADs_resolution=domains_resolution,
                                           score_file=scores_file,
-                                          useHash=True)
+                                          useHash=False)
