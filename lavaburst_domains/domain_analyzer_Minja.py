@@ -64,10 +64,14 @@ def statDomains(domains):
     # exit if results file exists
     if os.path.isfile(results_file) and not redraw_figs:
         return
-    sns.violinplot(x="chr", y="size", data=domains)
+    vp = sns.violinplot(x="chr", y="size", data=domains)
+    vp.set_xlabel("Chromosome", fontsize=14)
+    vp.set_ylabel("Domain size", fontsize=14)
+    vp.set_title(shortname, fontsize=16, fontstyle="italic")
     plt.savefig("results/" + os.path.basename(domains_file) + ".sizedist.png")
     plt.clf()
     with open(results_file,"w") as fout:
+        fout.write("Min and max domain size: " + str(domains["size"].min()) + "\t" + str(domains["size"].max()) +"\n")
         fout.write("Average domain size: " + str(domains["size"].median())+"\n")
         fout.write("Mean domain size: " + str(domains["size"].mean())+"\n")
         fout.write("Number of domains: " + str(len(domains))+ "\n")
@@ -176,6 +180,7 @@ def plot_E1_from_domains_size_dependence(E1, length_bin = 25000, maxlength = 400
     if os.path.isfile(figure_path) and not redraw_figs:
         return
     print("Getting domain length...")
+    E1 = pd.DataFrame(E1) # copy dataframe
     E1["domain_length"] = E1.apply(getOverlapingDomainLength, axis="columns",
                                    domains=domains, length_bin =length_bin, maxlength = maxlength)
     E1.query("domain_length != -1",inplace=True)
@@ -184,8 +189,13 @@ def plot_E1_from_domains_size_dependence(E1, length_bin = 25000, maxlength = 400
     ax = sns.violinplot(x="domain_length", y="E1", data=E1, palette="RdBu")
     ax.set_xlabel("Domain length, kb", fontsize=14)
     ax.set_ylabel("E1", fontsize=14)
+    ax.set_title(shortname, fontsize=16, fontstyle="italic")
+    ticklabels = [t.get_text() for t in ax.get_xticklabels()]
+    ticklabels[-1] = ">"+ticklabels[-1]
+    ax.set_xticklabels(ticklabels, rotation=45)
     plt.axhline(y=0)
-    plt.savefig(figure_path,dpi=600)
+    plt.tight_layout()
+    plt.savefig(figure_path,dpi=300)
     plt.clf()
 
 
@@ -227,7 +237,12 @@ def E1_near_boundaries_dendro(domains,boundaries,
         colors_list = [lencolors,inscolors_l,inscolors_r]
 
     E1_values = boundaries.flatten()
-    E1mapper = colors.TwoSlopeNorm(vcenter=0,
+    try:
+        E1mapper = colors.TwoSlopeNorm(vcenter=0,
+                         vmin=np.percentile(E1_values[E1_values<0],5),
+                         vmax=np.percentile(E1_values[E1_values>0],95))
+    except:
+        E1mapper = colors.DivergingNorm(vcenter=0,
                          vmin=np.percentile(E1_values[E1_values<0],5),
                          vmax=np.percentile(E1_values[E1_values>0],95))
 
@@ -286,6 +301,73 @@ def E1_near_boundaries_dendro(domains,boundaries,
     plt.clf()
 
 
+def E1_vs_insulation_scatterplor(E1, E1_resolution, k, averaged, boundary_index, domains):
+
+    figure_path = "results/" + os.path.basename(domains_file) + ".Insulation_violinplot.png"
+    if os.path.isfile(figure_path) and not redraw_figs:
+        return
+
+    # first compute genome-wide average of E1 differences
+    def doesE1overlapDomain(e1, boundaries):
+        overlap = boundaries.loc[e1.chr].index.overlaps(pd.Interval(e1.start,e1.end,closed="both"))
+        return np.any(overlap)
+
+
+    # remove E1 overlaping TAD boundaries
+    TADboundaries = pd.DataFrame({"chr":domains.chr, "vals":domains.chr})
+    TADboundaries["intervals"] = pd.arrays.IntervalArray.from_arrays(
+        domains.start - k*E1_resolution, domains.start + k*E1_resolution, closed="both")
+    TADboundaries.index = pd.MultiIndex.from_frame(TADboundaries[["chr", "intervals"]])
+    E1["contains_TAD_boundary"] = E1.apply(doesE1overlapDomain,boundaries=TADboundaries, axis="columns")
+    print (sum(E1["contains_TAD_boundary"].values)," out of ",
+               len(E1["contains_TAD_boundary"]),"E1 bins are located near TAD boundary")
+
+    E1 = pd.DataFrame(E1) # copy E1 dataframe
+    temp = [E1["E1"].shift(periods=i).values for i in np.arange(0,2*k+1)[::-1]]
+    temp = np.vstack(temp).T
+    temp =  temp[np.logical_and(~np.isnan(temp).any(axis=1),
+                                ~E1["contains_TAD_boundary"].values)]
+    print ("After filtering, ", len(temp), " bins left to compute expected E1 diff")
+    expected_E1_average = np.vstack((np.average(temp[:,:boundary_index],axis=1),
+                              np.average(temp[:,boundary_index+1:],axis=1))).T
+    expected_E1_diff = np.abs(np.subtract(expected_E1_average[:,0],expected_E1_average[:,1]))
+
+
+    E1diff = np.abs(np.subtract(averaged[:,0],averaged[:,1]))
+    from scipy.stats import mannwhitneyu
+    with open(figure_path+".stats.txt","w") as fout:
+        fout.write("Obseved average: "+str(np.average(E1diff)) + "\n")
+        fout.write("Obsrved average: "+str(np.average(E1diff)) + "\n")
+        statistic,pval = mannwhitneyu(E1diff,expected_E1_diff, alternative="two-sided")
+        fout.write("mannwhitneyu 2-sided test: "+str(pval) + "\n")
+        print ("mannwhitneyu 2-sided test: "+str(pval))
+    print ("--Drowing violinplot")
+    plot_data = {"label":["Expected cePC1 diff"]*len(expected_E1_diff)+["TAD boundaries cePC1 diff"]*len(E1diff),
+                 "|cePC1_left-cePC1_right|":expected_E1_diff.tolist()+E1diff.tolist(),
+                 "x":[shortname]*(len(expected_E1_diff)+len(E1diff))}
+    plot_data = pd.DataFrame(plot_data)
+    fig, ax = plt.subplots(figsize=(1,4))
+    vp = sns.violinplot(ax=ax, x="x", y="|cePC1_left-cePC1_right|",
+                        hue="label", data=plot_data, split=True, inner="quartile")
+    vp.legend_.remove()
+    plt.savefig(figure_path,dpi=300)
+    plt.clf()
+    return
+    # Uncomment following to draw scatterplot
+    """
+    print ("Drawing scatterplot...")
+    sp = sns.scatterplot(E1diff,
+                    y=domains.insulation_l.values.tolist()+domains.insulation_r.values.tolist(),
+                         hue=np.sign(np.multiply(averaged[:,0],averaged[:,1]))
+                )
+    sp.axvline(x=np.percentile(expected_E1_diff,25), ls="--")
+    sp.axvline(x=np.percentile(expected_E1_diff, 50), ls="--")
+    sp.set_xlabel("cePC1 difference", fontsize = 12)
+    sp.set_ylabel("insulatory score", fontsize = 12)
+    sp.axhline(y=0, ls="--")
+    plt.show()
+    """
+
 def compartments_switch_at_domains_boundaries(domains, E1, E1_resolutoin,
                                               TADs_resolution,score_file,
                                               useHash = False):
@@ -334,7 +416,7 @@ def compartments_switch_at_domains_boundaries(domains, E1, E1_resolutoin,
         #contactenate vectors for both boundaries
         #return
 
-    k = 3 # how many bins near boundary to use
+    k = 2 # how many bins near boundary to use
     hashfile = os.path.join("hashedData",
                             md5((domains_file+compartments_file+str(k)).encode()).hexdigest() + \
                             "."+compartments_switch_at_domains_boundaries.__name__+".v2.dump")
@@ -350,8 +432,6 @@ def compartments_switch_at_domains_boundaries(domains, E1, E1_resolutoin,
 
     # E1_boundary = None when some of the E1 value missing
     # assert that this does not happen often
-    print (domains.head())
-    print (E1.head())
     print ("For this numner of TADs E1 was not defined: ",
            pd.isna(domains["E1_boundary"]).sum())
     assert pd.isna(domains["E1_boundary"]).sum() < (len(domains) / 10)
@@ -387,34 +467,10 @@ def compartments_switch_at_domains_boundaries(domains, E1, E1_resolutoin,
     print("Drawing E1-diff vs insulation scatterplot")
     # on X-axes E1 difference
     # on Y-axes insulation score
-
-    # first compute genome-wide average of E1 differences
-    temp = [E1["E1"].shift(periods=i).values for i in np.arange(0,2*k+1)[::-1]]
-    temp = np.vstack(temp).T
-    temp =  temp[~np.isnan(temp).any(axis=1)]
-    expected_E1_average = np.vstack((np.average(temp[:,:boundary_index],axis=1),
-                              np.average(temp[:,boundary_index+1:],axis=1))).T
-    expected_E1_diff = np.abs(np.subtract(expected_E1_average[:,0],expected_E1_average[:,1]))
-
-    plt.clf()
-    E1diff = np.abs(np.subtract(averaged[:,0],averaged[:,1]))
-    if min(E1diff) == 0:
-        pseudocount = min(E1diff[E1diff>0])/1000
-    else:
-        pseudocount = 0
-    sp = sns.scatterplot(E1diff+pseudocount,
-                    y=domains.insulation_l.values.tolist()+domains.insulation_r.values.tolist(),
-                         hue=np.sign(np.multiply(averaged[:,0],averaged[:,1]))
-                )
-    #sp.set_xscale('log')
-    sp.axvline(x=np.percentile(expected_E1_diff,25), ls="--")
-    sp.axvline(x=np.percentile(expected_E1_diff, 50), ls="--")
-    sp.set_xlabel("cePC1 difference", fontsize = 12)
-    sp.set_ylabel("insulatory score", fontsize = 12)
-    sp.axhline(y=0, ls="--")
-    plt.show()
+    E1_vs_insulation_scatterplor(E1, E1_resolution, k, averaged, boundary_index, domains)
 
     ################# examples of insulated domains w/o E1 change #############
+    E1diff = np.abs(np.subtract(averaged[:, 0], averaged[:, 1]))
     E1diff_threashold = np.percentile(E1diff,10)
     insulation_threashold = np.percentile(domains.insulation_l.values.tolist()+\
                                       domains.insulation_r.values.tolist(),
@@ -457,7 +513,7 @@ datasets = {
 }
 
 # do analysis if output figures exist?
-redraw_figs = False
+redraw_figs = True
 
 # sie of the Hi-C bin. Should be same for E1 and domains
 domains_resolution = 5000
