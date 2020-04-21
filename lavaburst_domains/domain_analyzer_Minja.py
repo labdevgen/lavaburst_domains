@@ -68,6 +68,7 @@ def statDomains(domains):
     vp.set_xlabel("Chromosome", fontsize=14)
     vp.set_ylabel("Domain size", fontsize=14)
     vp.set_title(shortname, fontsize=16, fontstyle="italic")
+    plt.tight_layout()
     plt.savefig("results/" + os.path.basename(domains_file) + ".sizedist.png")
     plt.clf()
     with open(results_file,"w") as fout:
@@ -346,10 +347,11 @@ def E1_vs_insulation_scatterplor(E1, E1_resolution, k, averaged, boundary_index,
                  "|cePC1_left-cePC1_right|":expected_E1_diff.tolist()+E1diff.tolist(),
                  "x":[shortname]*(len(expected_E1_diff)+len(E1diff))}
     plot_data = pd.DataFrame(plot_data)
-    fig, ax = plt.subplots(figsize=(1,4))
+    fig, ax = plt.subplots(figsize=(4,8))
     vp = sns.violinplot(ax=ax, x="x", y="|cePC1_left-cePC1_right|",
                         hue="label", data=plot_data, split=True, inner="quartile")
     vp.legend_.remove()
+    vp.set_xlabel("")
     plt.savefig(figure_path,dpi=300)
     plt.clf()
     return
@@ -513,14 +515,15 @@ datasets = {
 }
 
 # do analysis if output figures exist?
-redraw_figs = True
+redraw_figs = False
 
 # sie of the Hi-C bin. Should be same for E1 and domains
 domains_resolution = 5000
 
 # hic_file = "hics/AcolNg_V3.hic.25000.oe.1000000.MB"
 # domains_file = "https://genedev.bionet.nsc.ru/site/hic_out/Anopheles/hicExplorer_TADs/results/AalbS2_V4.1000.hic_5000.h5.delt.0.05_domains.2D"
-domains_file = "https://genedev.bionet.nsc.ru/site/hic_out/Anopheles/hicExplorer_TADs/results/AsteI2_V4.5000.TADs_editted.2D"
+domains_file = "https://genedev.bionet.nsc.ru/site/hic_out/Anopheles/hicExplorer_TADs/results/AatrE3_V4.5000.TADs_editted.2D"
+#domains_file = "https://genedev.bionet.nsc.ru/site/hic_out/Anopheles/hicExplorer_TADs/results/AsteI2_V4.5000.TADs_editted.2D"
 
 scores_file = datasets[os.path.basename(domains_file)]["scores"]
 shortname = datasets[os.path.basename(domains_file)]["title"]
