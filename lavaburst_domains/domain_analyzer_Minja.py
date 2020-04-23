@@ -505,57 +505,71 @@ def compartments_switch_at_domains_boundaries(domains, E1, E1_resolutoin,
 datasets = {
     "AatrE3_V4.5000.TADs_editted.2D":{"scores":"https://genedev.bionet.nsc.ru/site/hic_out/Anopheles/hicExplorer_TADs/results/AatrE3_V4.1000.hic_5000.h5.delt.0.05_score.bedgraph",
                                      "title":"An. atroparvus",
-                                     "E1":"https://genedev.bionet.nsc.ru/site/hic_out/Anopheles/eig/v3/AatrE3_V3.tpm.my.eig.bedGraph"},
+                                     "E1":"https://genedev.bionet.nsc.ru/site/hic_out/Anopheles/eig/v4/AatrE3_V4.ce.pc1.25000.eig.bedGraph	"},
     "AalbS2_V4.5000.TADs_editted.2D":{"scores":"https://genedev.bionet.nsc.ru/site/hic_out/Anopheles/hicExplorer_TADs/results/AalbS2_V3.1000.hic_5000.h5.delt.0.05_score.bedgraph",
                                      "title":"An. albimanus",
-                                      "E1":"https://genedev.bionet.nsc.ru/site/hic_out/Anopheles/eig/v3/AalbS2_V3.tpm.my.eig.bedGraph"},
+                                      "E1":"https://genedev.bionet.nsc.ru/site/hic_out/Anopheles/eig/v4/AalbS2_V4.ce.pc1.25000.eig.bedGraph"},
     "AsteI2_V4.5000.TADs_editted.2D":{"scores":"https://genedev.bionet.nsc.ru/site/hic_out/Anopheles/hicExplorer_TADs/results/AsteI2_V4.1000.hic_5000.h5.delt.0.05_score.bedgraph",
                                      "title":"An. stephensi",
-                                      "E1":"https://genedev.bionet.nsc.ru/site/hic_out/Anopheles/eig/v3/AsteI2_V3.tpm.my.eig.bedGraph"}
+                                      "E1":"https://genedev.bionet.nsc.ru/site/hic_out/Anopheles/eig/v3/AsteI2_V4.ce.pc1.25000.eig.bedGraph"},
+    "AmerR4_V4.hic_5000.h5.delt.0.05_domains.2D":
+                                    {"scores":"https://genedev.bionet.nsc.ru/site/hic_out/Anopheles/hicExplorer_TADs/results/AmerR4_V4.hic_5000.h5.delt.0.05_score.bedgraph",
+                                     "title":"An. merus",
+                                      "E1":"https://genedev.bionet.nsc.ru/site/hic_out/Anopheles/eig/v4/AmerR4_V4.ce.pc1.25000.eig.bedGraph	"
+                                      },
+    "AcolNg_V4.hic_5000.h5.delt.0.05_domains.2D": {
+        "scores": "https://genedev.bionet.nsc.ru/site/hic_out/Anopheles/hicExplorer_TADs/results/AcolNg_V4.hic_5000.h5.delt.0.05_score.bedgraph",
+        "title": "An. colluzii",
+        "E1": "https://genedev.bionet.nsc.ru/site/hic_out/Anopheles/eig/v4/AcolNg_V4.ce.pc1.25000.eig.bedGraph	"
+        }
 }
 
-# do analysis if output figures exist?
-redraw_figs = False
+for species in datasets.keys():
+    for k in ["scores","E1"]:
+        assert species.split("_") in datasets[species][k]
 
-# sie of the Hi-C bin. Should be same for E1 and domains
-domains_resolution = 5000
+    # do analysis if output figures exist?
+    redraw_figs = True
 
-# hic_file = "hics/AcolNg_V3.hic.25000.oe.1000000.MB"
-# domains_file = "https://genedev.bionet.nsc.ru/site/hic_out/Anopheles/hicExplorer_TADs/results/AalbS2_V4.1000.hic_5000.h5.delt.0.05_domains.2D"
-domains_file = "https://genedev.bionet.nsc.ru/site/hic_out/Anopheles/hicExplorer_TADs/results/AatrE3_V4.5000.TADs_editted.2D"
-#domains_file = "https://genedev.bionet.nsc.ru/site/hic_out/Anopheles/hicExplorer_TADs/results/AsteI2_V4.5000.TADs_editted.2D"
+    # sie of the Hi-C bin. Should be same for E1 and domains
+    domains_resolution = 5000
 
-scores_file = datasets[os.path.basename(domains_file)]["scores"]
-shortname = datasets[os.path.basename(domains_file)]["title"]
-compartments_file = datasets[os.path.basename(domains_file)]["E1"]
+    # hic_file = "hics/AcolNg_V3.hic.25000.oe.1000000.MB"
+    # domains_file = "https://genedev.bionet.nsc.ru/site/hic_out/Anopheles/hicExplorer_TADs/results/AalbS2_V4.1000.hic_5000.h5.delt.0.05_domains.2D"
+    domains_file = "https://genedev.bionet.nsc.ru/site/hic_out/Anopheles/hicExplorer_TADs/results/AatrE3_V4.5000.TADs_editted.2D"
+    #domains_file = "https://genedev.bionet.nsc.ru/site/hic_out/Anopheles/hicExplorer_TADs/results/AsteI2_V4.5000.TADs_editted.2D"
 
-E1_resolution = 25000
+    scores_file = datasets[os.path.basename(domains_file)]["scores"]
+    shortname = datasets[os.path.basename(domains_file)]["title"]
+    compartments_file = datasets[os.path.basename(domains_file)]["E1"]
 
-print ("Domains: ",domains_file)
-print ("Compartments: ", compartments_file)
-domains = read_domains(domains_file)
+    E1_resolution = 25000
 
-# plot violin plot of domain sizes, print mean and average to file
-statDomains(domains)
+    print ("Domains: ",domains_file)
+    print ("Compartments: ", compartments_file)
+    domains = read_domains(domains_file)
 
-E1 = read_compartments(compartments_file)
-assert (E1.start % E1_resolution == 0).all()
+    # plot violin plot of domain sizes, print mean and average to file
+    statDomains(domains)
 
-print ("Starting analysis....")
+    E1 = read_compartments(compartments_file)
+    assert (E1.start % E1_resolution == 0).all()
 
-# This func plots dependence of the E1-values of within-domain bins from domain size
-# Motivated by the visual observation that long domains
-# are predominantly located in the B-compartment
+    print ("Starting analysis....")
 
-plot_E1_from_domains_size_dependence(E1)
+    # This func plots dependence of the E1-values of within-domain bins from domain size
+    # Motivated by the visual observation that long domains
+    # are predominantly located in the B-compartment
+
+    plot_E1_from_domains_size_dependence(E1)
 
 
-# This function will add insulation score for each genomic boundary
-# technically this will add insulation_r / l fields to domain dframe
-# get_insulation_of_domain_boundaries_hicExplorer_scores(domains,scores_file=scores_file,
-#                                                       domains_resolution=domains_resolution)
+    # This function will add insulation score for each genomic boundary
+    # technically this will add insulation_r / l fields to domain dframe
+    # get_insulation_of_domain_boundaries_hicExplorer_scores(domains,scores_file=scores_file,
+    #                                                       domains_resolution=domains_resolution)
 
-compartments_switch_at_domains_boundaries(domains, E1, E1_resolutoin = E1_resolution,
-                                          TADs_resolution=domains_resolution,
-                                          score_file=scores_file,
-                                          useHash=False)
+    compartments_switch_at_domains_boundaries(domains, E1, E1_resolutoin = E1_resolution,
+                                              TADs_resolution=domains_resolution,
+                                              score_file=scores_file,
+                                              useHash=False)
