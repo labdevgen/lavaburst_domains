@@ -64,6 +64,7 @@ def statDomains(domains):
     # exit if results file exists
     if os.path.isfile(results_file) and not redraw_figs:
         return
+    plt.figure(figsize=(6.4, 4.8))
     vp = sns.violinplot(x="chr", y="size", data=domains)
     vp.set_xlabel("Chromosome", fontsize=14)
     vp.set_ylabel("Domain size", fontsize=14)
@@ -191,7 +192,7 @@ def plot_E1_from_domains_size_dependence(E1, length_bin = 25000, maxlength = 400
     print("Plotting")
     ax = sns.violinplot(x="domain_length", y="E1", data=E1, palette="RdBu")
     ax.set_xlabel("Domain length, kb", fontsize=14)
-    ax.set_ylabel("E1", fontsize=14)
+    ax.set_ylabel("cePC1", fontsize=14)
     ax.set_title(shortname, fontsize=16, fontstyle="italic")
     ticklabels = [t.get_text() for t in ax.get_xticklabels()]
     ticklabels[-1] = ">"+ticklabels[-1]
@@ -438,7 +439,7 @@ def compartments_switch_at_domains_boundaries(domains, E1, E1_resolutoin,
     # assert that this does not happen often
     print ("For this numner of TADs E1 was not defined: ",
            pd.isna(domains["E1_boundary"]).sum())
-    assert pd.isna(domains["E1_boundary"]).sum() < (len(domains) / 10)
+    assert pd.isna(domains["E1_boundary"]).sum() < (len(domains) * 0.15)
     domains.query("end-start >= (@k+1)*@E1_resolution",inplace=True)
     domains = domains[pd.notna(domains["E1_boundary"])]
     print ("After all pre-filters, ",len(domains)," domains left in analysis")
@@ -532,7 +533,7 @@ for sp in datasets.keys():
         assert datasets[sp][k].find(sp.split("_")[0]) != -1
 
     # do analysis if output figures exist?
-    redraw_figs = True
+    redraw_figs = False
 
     # sie of the Hi-C bin. Should be same for E1 and domains
     domains_resolution = 5000
