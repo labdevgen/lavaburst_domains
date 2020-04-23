@@ -72,10 +72,12 @@ def statDomains(domains):
     plt.savefig("results/" + os.path.basename(domains_file) + ".sizedist.png")
     plt.clf()
     with open(results_file,"w") as fout:
-        fout.write("Min and max domain size: " + str(domains["size"].min()) + "\t" + str(domains["size"].max()) +"\n")
-        fout.write("Average domain size: " + str(domains["size"].median())+"\n")
-        fout.write("Mean domain size: " + str(domains["size"].mean())+"\n")
-        fout.write("Number of domains: " + str(len(domains))+ "\n")
+        fout.write("Title:\t" + shortname + "\n")
+        fout.write("Min domain size:\t" + str(domains["size"].min()) + "\n")
+        fout.write("Max domain size:\t" + str(domains["size"].max()) + "\n")
+        fout.write("Average domain size:\t" + str(domains["size"].median())+"\n")
+        fout.write("Mean domain size:\t" + str(domains["size"].mean())+"\n")
+        fout.write("Number of domains:\t" + str(len(domains))+ "\n")
 
 # for each domain boundaries compute insulatory score
 # insulatory score is simply an average obs/expected for rhombus with apex in domain boundary
@@ -511,7 +513,7 @@ datasets = {
                                       "E1":"https://genedev.bionet.nsc.ru/site/hic_out/Anopheles/eig/v4/AalbS2_V4.ce.pc1.25000.eig.bedGraph"},
     "AsteI2_V4.5000.TADs_editted.2D":{"scores":"https://genedev.bionet.nsc.ru/site/hic_out/Anopheles/hicExplorer_TADs/results/AsteI2_V4.1000.hic_5000.h5.delt.0.05_score.bedgraph",
                                      "title":"An. stephensi",
-                                      "E1":"https://genedev.bionet.nsc.ru/site/hic_out/Anopheles/eig/v3/AsteI2_V4.ce.pc1.25000.eig.bedGraph"},
+                                      "E1":"https://genedev.bionet.nsc.ru/site/hic_out/Anopheles/eig/v4/AsteI2_V4.ce.pc1.25000.eig.bedGraph"},
     "AmerR4_V4.hic_5000.h5.delt.0.05_domains.2D":
                                     {"scores":"https://genedev.bionet.nsc.ru/site/hic_out/Anopheles/hicExplorer_TADs/results/AmerR4_V4.hic_5000.h5.delt.0.05_score.bedgraph",
                                      "title":"An. merus",
@@ -524,9 +526,10 @@ datasets = {
         }
 }
 
-for species in datasets.keys():
+for sp in datasets.keys():
+    print (sp)
     for k in ["scores","E1"]:
-        assert species.split("_") in datasets[species][k]
+        assert datasets[sp][k].find(sp.split("_")[0]) != -1
 
     # do analysis if output figures exist?
     redraw_figs = True
@@ -536,7 +539,7 @@ for species in datasets.keys():
 
     # hic_file = "hics/AcolNg_V3.hic.25000.oe.1000000.MB"
     # domains_file = "https://genedev.bionet.nsc.ru/site/hic_out/Anopheles/hicExplorer_TADs/results/AalbS2_V4.1000.hic_5000.h5.delt.0.05_domains.2D"
-    domains_file = "https://genedev.bionet.nsc.ru/site/hic_out/Anopheles/hicExplorer_TADs/results/AatrE3_V4.5000.TADs_editted.2D"
+    domains_file = "https://genedev.bionet.nsc.ru/site/hic_out/Anopheles/hicExplorer_TADs/results/"+sp
     #domains_file = "https://genedev.bionet.nsc.ru/site/hic_out/Anopheles/hicExplorer_TADs/results/AsteI2_V4.5000.TADs_editted.2D"
 
     scores_file = datasets[os.path.basename(domains_file)]["scores"]
